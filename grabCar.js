@@ -243,7 +243,6 @@ function getCoordinates(locationString) {
       "Location__c": resolvedLocation,
       "Logistics__c": distanceMiles,
       "VIN__c": extractedVin,
-      "Status__c": listingStatus
     };
 
     console.log(`Upserting: ${recordPayload.Name} | VIN: ${extractedVin} | Status: ${listingStatus}`);
