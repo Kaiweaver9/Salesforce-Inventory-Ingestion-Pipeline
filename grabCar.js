@@ -25,7 +25,7 @@ const SF_LOGIN_URL = process.env.SF_LOGIN_URL || 'https://login.salesforce.com';
 const POST_FALLS_COORDS = { latitude: 47.7121, longitude: -116.9482 };
 
 // --- PAGINATION DEPTH CONFIGURATION ---
-const MAX_PAGES_PER_FILTER = 5; // Adjust this integer to scale search depth (e.g., 3, 5, 10)
+const MAX_PAGES_PER_FILTER = 2; // Locked to 2 pages for optimal speed across dynamic sort vectors
 
 // Dynamic Geocoding via OpenStreetMap
 function getCoordinates(locationString) {
@@ -64,7 +64,7 @@ function getCoordinates(locationString) {
   }
 
   console.log(`Loaded ${searchUrls.length} base search filter URL(s) from urls.json.`);
-  console.log(`Configured Depth: Scanning up to ${MAX_PAGES_PER_FILTER} page(s) per filter.\n`);
+  console.log(`Configured Depth: Scanning top ${MAX_PAGES_PER_FILTER} page(s) per sort vector.\n`);
 
   // 2. Connect to Salesforce API
   console.log("Connecting to Salesforce API...");
@@ -110,7 +110,6 @@ function getCoordinates(locationString) {
     console.log(`=== Processing Filter Base [${i + 1}/${searchUrls.length}] ===`);
 
     for (let pageNum = 1; pageNum <= MAX_PAGES_PER_FILTER; pageNum++) {
-      // Corrected query parameter pagination for CarGurus
       const targetFilterUrl = pageNum === 1 ? baseUrl : `${baseUrl}&page=${pageNum}`;
       console.log(`Scanning filter [${i + 1}/${searchUrls.length}] -> Page ${pageNum}...`);
 
@@ -153,7 +152,6 @@ function getCoordinates(locationString) {
 
         console.log(`Page ${pageNum}: Found ${pageLinks.length} candidate vehicle links.`);
         
-        // Break early if an empty page is returned
         if (pageLinks.length === 0) {
           console.log(`Page ${pageNum} yielded zero links. Reached end of pagination for Filter [${i + 1}]. Moving to next filter.`);
           await indexPage.close();
