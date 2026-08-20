@@ -1,5 +1,6 @@
 // grabCar.js - Fully Patched Precision Extractor & Salesforce Sync
 
+import geolib from 'geolib';
 import https from 'https';
 import puppeteer from 'puppeteer';
 import jsforce from 'jsforce';
