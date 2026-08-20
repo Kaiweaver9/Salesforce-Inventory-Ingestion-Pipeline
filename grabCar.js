@@ -290,7 +290,7 @@ function getCoordinates(locationString) {
       "Location__c": resolvedLocation,
       "Logistics__c": distanceMiles,
       "VIN__c": extractedVin,
-      "Listing_URL__c": targetUrl, // Direct CarGurus listing URL populates here
+      "Listing_URL__c": cleanUrl, // Direct CarGurus listing URL populates here
     };
 
     console.log(`Upserting: ${recordPayload.Name} | VIN: ${extractedVin} | URL: ${targetUrl}`);
