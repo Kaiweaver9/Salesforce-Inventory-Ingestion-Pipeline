@@ -110,8 +110,8 @@ function getCoordinates(locationString) {
     console.log(`=== Processing Filter Base [${i + 1}/${searchUrls.length}] ===`);
 
     for (let pageNum = 1; pageNum <= MAX_PAGES_PER_FILTER; pageNum++) {
-      // Append CarGurus pagination parameter
-      const targetFilterUrl = pageNum === 1 ? baseUrl : `${baseUrl}#page=${pageNum}`;
+      // Corrected query parameter pagination for CarGurus
+      const targetFilterUrl = pageNum === 1 ? baseUrl : `${baseUrl}&page=${pageNum}`;
       console.log(`Scanning filter [${i + 1}/${searchUrls.length}] -> Page ${pageNum}...`);
 
       const indexPage = await browser.newPage();
@@ -153,7 +153,7 @@ function getCoordinates(locationString) {
 
         console.log(`Page ${pageNum}: Found ${pageLinks.length} candidate vehicle links.`);
         
-        // Break early if an empty page is returned (end of search results)
+        // Break early if an empty page is returned
         if (pageLinks.length === 0) {
           console.log(`Page ${pageNum} yielded zero links. Reached end of pagination for Filter [${i + 1}]. Moving to next filter.`);
           await indexPage.close();
@@ -292,7 +292,6 @@ function getCoordinates(locationString) {
       "Location__c": resolvedLocation,
       "Logistics__c": distanceMiles,
       "VIN__c": extractedVin,
-      // "Listing_URL__c": targetUrl
     };
 
     console.log(`Upserting: ${recordPayload.Name} | VIN: ${extractedVin} | Owners: ${finalOwners} | Price: $${finalPrice}`);
