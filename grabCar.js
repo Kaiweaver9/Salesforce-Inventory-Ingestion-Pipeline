@@ -1,9 +1,12 @@
-// grabCar.js - Multi-Filter Index Scraper with Dynamic Tile Rendering
+// grabCar.js - Multi-Filter Index Scraper with Dynamic Tile Rendering & Smart Upsert
 
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import jsforce from 'jsforce';
 import https from 'https';
 import fs from 'fs';
+
+puppeteer.use(StealthPlugin());
 
 // Pure math Haversine calculation
 function getDistanceInMeters(coord1, coord2) {
@@ -73,11 +76,28 @@ function getCoordinates(locationString) {
     process.exit(1);
   }
 
+  // 2b. Fetch Existing Salesforce Records for Selective Field Protection
+  console.log("Fetching existing records from Salesforce to preserve manual edits...");
+  const existingMap = new Map();
+  try {
+    const existingRecords = await conn.sobject("Car_Candidate__c").find(
+      {}, 
+      ["Id", "VIN__c", "Previous_Owners__c", "Car_Price__c"]
+    );
+    existingRecords.forEach(rec => {
+      if (rec.VIN__c) existingMap.set(rec.VIN__c, rec);
+    });
+    console.log(`Loaded ${existingMap.size} existing records into memory map.\n`);
+  } catch (err) {
+    console.warn("Notice: Could not fetch existing records for comparison. Proceeding with standard upsert payload:", err.message);
+  }
+
   const browser = await puppeteer.launch({ 
-    headless: true,
+    headless: "new",
     args: [
       '--no-sandbox', 
       '--disable-setuid-sandbox',
+      '--disable-blink-features=AutomationControlled',
       '--window-size=1920,1080'
     ]
   });
@@ -91,7 +111,6 @@ function getCoordinates(locationString) {
 
     const indexPage = await browser.newPage();
     await indexPage.setViewport({ width: 1920, height: 1080 });
-    await indexPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
 
     try {
       await indexPage.goto(filterUrl, { waitUntil: 'networkidle2', timeout: 60000 });
@@ -151,7 +170,6 @@ function getCoordinates(locationString) {
     console.log(`--- [${i + 1}/${vehicleList.length}] Scraping Detail Page: ${targetUrl} ---`);
 
     const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
     
     let listingStatus = "Active";
     try {
@@ -233,19 +251,36 @@ function getCoordinates(locationString) {
       distanceMiles = resolvedLocation.includes("FL") ? 2500 : 300; 
     }
 
+    // --- SELECTIVE FIELD PROTECTION LOGIC ---
+    let finalOwners = owners;
+    let finalPrice = price;
+
+    const existingRecord = existingMap.get(extractedVin);
+    if (existingRecord) {
+      // 1. Lock in manual owner overrides from Salesforce
+      if (existingRecord.Previous_Owners__c != null) {
+        finalOwners = existingRecord.Previous_Owners__c;
+      }
+      // 2. Intelligent price management: Keep lower negotiated price OR take dynamic price drops
+      if (existingRecord.Car_Price__c != null && price > 0) {
+        finalPrice = Math.min(existingRecord.Car_Price__c, price);
+      }
+    }
+
     const recordPayload = {
       "Name": `${extractedYear} ${makeModel} - ${resolvedLocation}`,
-      "Car_Price__c": price,
+      "Car_Price__c": finalPrice,
       "Mileage__c": mileage,
-      "Previous_Owners__c": owners,
+      "Previous_Owners__c": finalOwners,
       "Make_and_Model__c": makeModel,
       "Year__c": extractedYear,
       "Location__c": resolvedLocation,
       "Logistics__c": distanceMiles,
       "VIN__c": extractedVin,
+      // "Listing_URL__c": targetUrl // Uncomment after creating Listing_URL__c field in Salesforce
     };
 
-    console.log(`Upserting: ${recordPayload.Name} | VIN: ${extractedVin} | Status: ${listingStatus}`);
+    console.log(`Upserting: ${recordPayload.Name} | VIN: ${extractedVin} | Owners: ${finalOwners} | Price: $${finalPrice}`);
 
     try {
       const result = await conn.sobject("Car_Candidate__c").upsert(recordPayload, 'VIN__c');
