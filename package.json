@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "geolib": "^3.3.14",
+    "jsforce": "^3.10.22",
+    "puppeteer": "^25.8.0"
+  }
+}
