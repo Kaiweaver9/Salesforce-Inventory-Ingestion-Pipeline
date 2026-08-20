@@ -1,12 +1,9 @@
 // grabCar.js - Multi-Filter Index Scraper with Dynamic Tile Rendering & Smart Upsert
 
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import puppeteer from 'puppeteer';
 import jsforce from 'jsforce';
 import https from 'https';
 import fs from 'fs';
-
-puppeteer.use(StealthPlugin());
 
 // Pure math Haversine calculation
 function getDistanceInMeters(coord1, coord2) {
@@ -93,11 +90,10 @@ function getCoordinates(locationString) {
   }
 
   const browser = await puppeteer.launch({ 
-    headless: "new",
+    headless: true,
     args: [
       '--no-sandbox', 
       '--disable-setuid-sandbox',
-      '--disable-blink-features=AutomationControlled',
       '--window-size=1920,1080'
     ]
   });
@@ -111,6 +107,7 @@ function getCoordinates(locationString) {
 
     const indexPage = await browser.newPage();
     await indexPage.setViewport({ width: 1920, height: 1080 });
+    await indexPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
 
     try {
       await indexPage.goto(filterUrl, { waitUntil: 'networkidle2', timeout: 60000 });
@@ -170,6 +167,7 @@ function getCoordinates(locationString) {
     console.log(`--- [${i + 1}/${vehicleList.length}] Scraping Detail Page: ${targetUrl} ---`);
 
     const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
     
     let listingStatus = "Active";
     try {
