@@ -2,8 +2,12 @@ name: Salesforce Corolla Scraper
 
 on:
   schedule:
-    # Runs twice daily at 6:00 AM and 6:00 PM UTC
-    - cron: '0 6,18 * * *'
+    # Runs every 6 hours aligned to Pacific Time:
+    # - 18:00 (6:00 PM PDT) -> 01:00 UTC
+    # - 00:00 (12:00 AM PDT) -> 07:00 UTC
+    # - 06:00 (6:00 AM PDT) -> 13:00 UTC
+    # - 12:00 (12:00 PM PDT) -> 19:00 UTC
+    - cron: '0 1,7,13,19 * * *'
   # Allows manual triggers directly from the Actions tab anytime
   workflow_dispatch:
 
