@@ -1,4 +1,4 @@
-// grabCar.js - Multi-Listing JSON Batch Extractor & Salesforce Direct Insertion
+// grabCar.js - Multi-Filter Index Scraper & Salesforce Direct Insertion Pipeline
 
 import puppeteer from 'puppeteer';
 import jsforce from 'jsforce';
@@ -48,21 +48,21 @@ function getCoordinates(locationString) {
 }
 
 (async () => {
-  // 1. Determine target URLs (Command Line single link or full urls.json batch)
-  let targetUrls = [];
+  // 1. Load Filter Search URLs from urls.json or command line
+  let searchUrls = [];
   if (process.argv[2]) {
-    targetUrls = [process.argv[2]];
+    searchUrls = [process.argv[2]];
   } else if (fs.existsSync('./urls.json')) {
     const fileData = fs.readFileSync('./urls.json', 'utf8');
-    targetUrls = JSON.parse(fileData);
+    searchUrls = JSON.parse(fileData);
   } else {
-    console.error("Error: No link provided and urls.json not found!");
+    console.error("Error: No search link provided and urls.json not found!");
     process.exit(1);
   }
 
-  console.log(`Found ${targetUrls.length} vehicle listing(s) to process.`);
+  console.log(`Loaded ${searchUrls.length} search filter URL(s) from urls.json.`);
 
-  // 2. Connect to Salesforce
+  // 2. Connect to Salesforce API
   console.log("Connecting to Salesforce API...");
   const conn = new jsforce.Connection({ loginUrl: SF_LOGIN_URL });
   try {
@@ -73,16 +73,49 @@ function getCoordinates(locationString) {
     process.exit(1);
   }
 
-  // 3. Launch Puppeteer
   const browser = await puppeteer.launch({ 
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
 
-  // 4. Loop through every URL in urls.json
-  for (let i = 0; i < targetUrls.length; i++) {
-    const targetUrl = targetUrls[i];
-    console.log(`--- [${i + 1}/${targetUrls.length}] Scraping: ${targetUrl} ---`);
+  // 3. STAGE 1: Collect individual vehicle listing URLs from search result pages
+  const extractedVehicleUrls = new Set();
+
+  for (let i = 0; i < searchUrls.length; i++) {
+    const filterUrl = searchUrls[i];
+    console.log(`Scanning filter index [${i + 1}/${searchUrls.length}] for vehicle tiles...`);
+
+    const indexPage = await browser.newPage();
+    await indexPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
+
+    try {
+      await indexPage.goto(filterUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      
+      // Collect all vehicle detail page links (VDPs) from tiles
+      const pageLinks = await indexPage.evaluate(() => {
+        const anchors = Array.from(document.querySelectorAll('a[href]'));
+        return anchors
+          .map(a => a.href)
+          .filter(href => href.includes('/vdp.action') || href.includes('/listing/'));
+      });
+
+      pageLinks.forEach(link => extractedVehicleUrls.add(link));
+    } catch (err) {
+      console.error(`Error scanning search index [${i + 1}]:`, err.message);
+    }
+    await indexPage.close();
+  }
+
+  const vehicleList = Array.from(extractedVehicleUrls);
+  console.log(`\nFound ${vehicleList.length} unique vehicle detail listings across all search filters.\n`);
+
+  // Fallback: If no tile links were extracted, process the targets directly
+  const targetsToProcess = vehicleList.length > 0 ? vehicleList : searchUrls;
+
+  // 4. STAGE 2: Scrape each vehicle detail page and upsert into Salesforce
+  for (let i = 0; i < targetsToProcess.length; i++) {
+    const targetUrl = targetsToProcess[i];
+    console.log(`--- [${i + 1}/${targetsToProcess.length}] Scraping Detail Page: ${targetUrl} ---`);
 
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
@@ -107,19 +140,26 @@ function getCoordinates(locationString) {
       listingStatus = "Sold";
     }
 
-    // Dynamic Extractions
+    // Dynamic VIN Extraction (strictly enforcing 17-char maximum for Salesforce VIN__c)
     let extractedVin = null;
     const vinMatch = pageText.match(/\b([A-HJ-NPR-Z0-9]{17})\b/i);
+
     if (vinMatch) {
       extractedVin = vinMatch[1].toUpperCase();
     } else {
       const listingIdMatch = targetUrl.match(/([0-9]{8,10})/);
-      extractedVin = listingIdMatch ? `CG-${listingIdMatch[1]}` : `AUTO-${Date.now()}`;
+      if (listingIdMatch) {
+        extractedVin = `CG-${listingIdMatch[1]}`.substring(0, 17);
+      } else {
+        extractedVin = `A${Date.now()}${Math.floor(Math.random() * 1000)}`.substring(0, 17);
+      }
     }
 
+    // Dynamic Year Extraction
     const yearMatch = fullText.match(/\b(20[1-2][0-9])\b/);
     const extractedYear = yearMatch ? yearMatch[1] : "2020";
 
+    // Make & Model Detection
     let makeModel = "Toyota Corolla SE";
     if (fullText.includes("CIVIC")) {
       makeModel = "Honda Civic Sport";
@@ -129,12 +169,14 @@ function getCoordinates(locationString) {
       makeModel = fullText.includes("NIGHTSHADE") ? "Toyota Corolla Nightshade" : "Toyota Corolla SE";
     }
 
+    // Price and Mileage Extraction
     const priceMatch = pageText.match(/\$([0-9]{2},[0-9]{3})/);
     const price = priceMatch ? parseInt(priceMatch[1].replace(/,/g, '')) : 0;
 
     const mileageMatch = pageText.match(/([0-9]{1,3},[0-9]{3})\s*(miles|mi)?/i);
     const mileage = mileageMatch ? parseInt(mileageMatch[1].replace(/,/g, '')) : 0;
 
+    // Previous Owners Extraction
     let owners = 1;
     const historyMatch = pageText.match(/([1-9])\s*previous\s*owner(?:s)?/i);
     if (historyMatch) {
@@ -144,6 +186,7 @@ function getCoordinates(locationString) {
       if (generalMatch) owners = parseInt(generalMatch[1], 10);
     }
 
+    // Location & Geocoded Distance
     const locationMatch = pageText.match(/([A-Za-z\s]+),\s*([A-Z]{2})/);
     const locationText = locationMatch ? `${locationMatch[1].trim().toUpperCase()}, ${locationMatch[2]}` : "UNKNOWN";
     const resolvedLocation = locationText !== "UNKNOWN" ? locationText : "Naples, FL";
@@ -171,7 +214,7 @@ function getCoordinates(locationString) {
     };
 
     console.log(`Upserting: ${recordPayload.Name} | VIN: ${extractedVin} | Status: ${listingStatus}`);
-    
+
     try {
       const result = await conn.sobject("Car_Candidate__c").upsert(recordPayload, 'VIN__c');
       if (result.success) {
@@ -185,5 +228,5 @@ function getCoordinates(locationString) {
   }
 
   await browser.close();
-  console.log("Batch processing complete!");
+  console.log("Full batch extraction complete!");
 })();
