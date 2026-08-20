@@ -1,0 +1,31 @@
+name: Salesforce Corolla Scraper
+
+on:
+  schedule:
+    # Runs twice daily at 6:00 AM and 6:00 PM UTC
+    - cron: '0 6,18 * * *'
+  # Allows manual triggers directly from the Actions tab anytime
+  workflow_dispatch:
+
+jobs:
+  scrape-and-upsert:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Car Extraction Script
+        env:
+          SF_USERNAME: ${{ secrets.SF_USERNAME }}
+          SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
+          SF_SECURITY_TOKEN: ${{ secrets.SF_SECURITY_TOKEN }}
+        run: node grabCar.js
