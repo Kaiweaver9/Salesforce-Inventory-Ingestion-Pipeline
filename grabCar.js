@@ -3,6 +3,11 @@
 import puppeteer from 'puppeteer';
 import jsforce from 'jsforce';
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // --- YOUR SALESFORCE CREDENTIALS ---
 const SF_USERNAME = process.env.SF_USERNAME || 'kai.weaver988.dae61fa699f9@agentforce.com';
