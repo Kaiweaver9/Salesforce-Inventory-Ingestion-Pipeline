@@ -83,7 +83,7 @@ function getCoordinates(locationString) {
   try {
     const existingRecords = await conn.sobject("Car_Candidate__c").find(
       {}, 
-      ["Id", "VIN__c", "Previous_Owners__c", "Car_Price__c"]
+      ["Id", "VIN__c", "Previous_Owners__c", "Car_Price__c", "Listing_URL__c"]
     );
     existingRecords.forEach(rec => {
       if (rec.VIN__c) existingMap.set(rec.VIN__c, rec);
@@ -290,9 +290,10 @@ function getCoordinates(locationString) {
       "Location__c": resolvedLocation,
       "Logistics__c": distanceMiles,
       "VIN__c": extractedVin,
+      "Listing_URL__c": targetUrl, // Direct CarGurus listing URL populates here
     };
 
-    console.log(`Upserting: ${recordPayload.Name} | VIN: ${extractedVin} | Owners: ${finalOwners} | Price: $${finalPrice}`);
+    console.log(`Upserting: ${recordPayload.Name} | VIN: ${extractedVin} | URL: ${targetUrl}`);
 
     try {
       const result = await conn.sobject("Car_Candidate__c").upsert(recordPayload, 'VIN__c');
