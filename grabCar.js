@@ -280,6 +280,9 @@ function getCoordinates(locationString) {
       }
     }
 
+    // Clean URL: Strip tracking query parameters to strictly enforce <255 character limit
+    const cleanUrl = targetUrl.split('?')[0];
+
     const recordPayload = {
       "Name": `${extractedYear} ${makeModel} - ${resolvedLocation}`,
       "Car_Price__c": finalPrice,
@@ -290,10 +293,10 @@ function getCoordinates(locationString) {
       "Location__c": resolvedLocation,
       "Logistics__c": distanceMiles,
       "VIN__c": extractedVin,
-      "Listing_URL__c": cleanUrl, // Direct CarGurus listing URL populates here
+      "Listing_URL__c": cleanUrl, // Clean URL string safely under 255 chars
     };
 
-    console.log(`Upserting: ${recordPayload.Name} | VIN: ${extractedVin} | URL: ${targetUrl}`);
+    console.log(`Upserting: ${recordPayload.Name} | VIN: ${extractedVin} | URL: ${cleanUrl}`);
 
     try {
       const result = await conn.sobject("Car_Candidate__c").upsert(recordPayload, 'VIN__c');
