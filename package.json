@@ -1,7 +1,10 @@
 {
+  "name": "salesforce-corolla-tracker",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "grabCar.js",
   "dependencies": {
-    "geolib": "^3.3.14",
-    "jsforce": "^3.10.22",
-    "puppeteer": "^25.8.0"
+    "jsforce": "^1.11.1",
+    "puppeteer": "^22.0.0"
   }
 }
