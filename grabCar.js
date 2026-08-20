@@ -1,11 +1,11 @@
-// grabCar.js - Multi-Filter Index Scraper & Salesforce Direct Insertion Pipeline
+// grabCar.js - Multi-Filter Index Scraper with Dynamic Tile Rendering
 
 import puppeteer from 'puppeteer';
 import jsforce from 'jsforce';
 import https from 'https';
 import fs from 'fs';
 
-// Pure math Haversine calculation to replace external distance libs
+// Pure math Haversine calculation
 function getDistanceInMeters(coord1, coord2) {
   const R = 6371000;
   const dLat = (coord2.latitude - coord1.latitude) * Math.PI / 180;
@@ -48,7 +48,7 @@ function getCoordinates(locationString) {
 }
 
 (async () => {
-  // 1. Load Filter Search URLs from urls.json or command line
+  // 1. Load Filter Search URLs
   let searchUrls = [];
   if (process.argv[2]) {
     searchUrls = [process.argv[2]];
@@ -75,7 +75,11 @@ function getCoordinates(locationString) {
 
   const browser = await puppeteer.launch({ 
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: [
+      '--no-sandbox', 
+      '--disable-setuid-sandbox',
+      '--window-size=1920,1080'
+    ]
   });
 
   // 3. STAGE 1: Collect individual vehicle listing URLs from search result pages
@@ -86,20 +90,46 @@ function getCoordinates(locationString) {
     console.log(`Scanning filter index [${i + 1}/${searchUrls.length}] for vehicle tiles...`);
 
     const indexPage = await browser.newPage();
+    await indexPage.setViewport({ width: 1920, height: 1080 });
     await indexPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
 
     try {
-      await indexPage.goto(filterUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await indexPage.goto(filterUrl, { waitUntil: 'networkidle2', timeout: 60000 });
       
-      // Collect all vehicle detail page links (VDPs) from tiles
+      // Wait for listing container or anchor elements to render
+      await indexPage.waitForSelector('a[href*="listing"], a[href*="vdp"]', { timeout: 15000 }).catch(() => {
+        console.log("Timeout waiting for explicit anchors, proceeding to DOM scan...");
+      });
+
+      // Auto-scroll to trigger lazy loading of car tiles
+      await indexPage.evaluate(async () => {
+        await new Promise((resolve) => {
+          let totalHeight = 0;
+          const distance = 300;
+          const timer = setInterval(() => {
+            const scrollHeight = document.body.scrollHeight;
+            window.scrollBy(0, distance);
+            totalHeight += distance;
+
+            if (totalHeight >= scrollHeight || totalHeight >= 4000) {
+              clearInterval(timer);
+              resolve();
+            }
+          }, 150);
+        });
+      });
+
+      // Extract all VDP / Listing links from DOM
       const pageLinks = await indexPage.evaluate(() => {
         const anchors = Array.from(document.querySelectorAll('a[href]'));
         return anchors
           .map(a => a.href)
-          .filter(href => href.includes('/vdp.action') || href.includes('/listing/'));
+          .filter(href => (href.includes('/vdp.action') || href.includes('/listing/') || href.includes('/detail')) && !href.includes('/search'));
       });
 
+      console.log(`Extracted ${pageLinks.length} raw vehicle links from filter [${i + 1}].`);
       pageLinks.forEach(link => extractedVehicleUrls.add(link));
+
     } catch (err) {
       console.error(`Error scanning search index [${i + 1}]:`, err.message);
     }
@@ -107,15 +137,18 @@ function getCoordinates(locationString) {
   }
 
   const vehicleList = Array.from(extractedVehicleUrls);
-  console.log(`\nFound ${vehicleList.length} unique vehicle detail listings across all search filters.\n`);
+  console.log(`\nTotal Unique Candidate Vehicles Found Across All Filters: ${vehicleList.length}\n`);
 
-  // Fallback: If no tile links were extracted, process the targets directly
-  const targetsToProcess = vehicleList.length > 0 ? vehicleList : searchUrls;
+  if (vehicleList.length === 0) {
+    console.error("No vehicle tile links were extracted. Halting execution.");
+    await browser.close();
+    process.exit(1);
+  }
 
   // 4. STAGE 2: Scrape each vehicle detail page and upsert into Salesforce
-  for (let i = 0; i < targetsToProcess.length; i++) {
-    const targetUrl = targetsToProcess[i];
-    console.log(`--- [${i + 1}/${targetsToProcess.length}] Scraping Detail Page: ${targetUrl} ---`);
+  for (let i = 0; i < vehicleList.length; i++) {
+    const targetUrl = vehicleList[i];
+    console.log(`--- [${i + 1}/${vehicleList.length}] Scraping Detail Page: ${targetUrl} ---`);
 
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
@@ -140,7 +173,7 @@ function getCoordinates(locationString) {
       listingStatus = "Sold";
     }
 
-    // Dynamic VIN Extraction (strictly enforcing 17-char maximum for Salesforce VIN__c)
+    // Dynamic VIN Extraction (strictly enforcing 17-char maximum)
     let extractedVin = null;
     const vinMatch = pageText.match(/\b([A-HJ-NPR-Z0-9]{17})\b/i);
 
