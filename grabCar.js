@@ -24,6 +24,9 @@ const SF_LOGIN_URL = process.env.SF_LOGIN_URL || 'https://login.salesforce.com';
 
 const POST_FALLS_COORDS = { latitude: 47.7121, longitude: -116.9482 };
 
+// --- PAGINATION DEPTH CONFIGURATION ---
+const MAX_PAGES_PER_FILTER = 5; // Adjust this integer to scale search depth (e.g., 3, 5, 10)
+
 // Dynamic Geocoding via OpenStreetMap
 function getCoordinates(locationString) {
   return new Promise((resolve) => {
@@ -60,7 +63,8 @@ function getCoordinates(locationString) {
     process.exit(1);
   }
 
-  console.log(`Loaded ${searchUrls.length} search filter URL(s) from urls.json.`);
+  console.log(`Loaded ${searchUrls.length} base search filter URL(s) from urls.json.`);
+  console.log(`Configured Depth: Scanning up to ${MAX_PAGES_PER_FILTER} page(s) per filter.\n`);
 
   // 2. Connect to Salesforce API
   console.log("Connecting to Salesforce API...");
@@ -98,62 +102,77 @@ function getCoordinates(locationString) {
     ]
   });
 
-  // 3. STAGE 1: Collect individual vehicle listing URLs from search result pages
+  // 3. STAGE 1: Collect individual vehicle listing URLs across paginated filter pages
   const extractedVehicleUrls = new Set();
 
   for (let i = 0; i < searchUrls.length; i++) {
-    const filterUrl = searchUrls[i];
-    console.log(`Scanning filter index [${i + 1}/${searchUrls.length}] for vehicle tiles...`);
+    const baseUrl = searchUrls[i];
+    console.log(`=== Processing Filter Base [${i + 1}/${searchUrls.length}] ===`);
 
-    const indexPage = await browser.newPage();
-    await indexPage.setViewport({ width: 1920, height: 1080 });
-    await indexPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
+    for (let pageNum = 1; pageNum <= MAX_PAGES_PER_FILTER; pageNum++) {
+      // Append CarGurus pagination parameter
+      const targetFilterUrl = pageNum === 1 ? baseUrl : `${baseUrl}#page=${pageNum}`;
+      console.log(`Scanning filter [${i + 1}/${searchUrls.length}] -> Page ${pageNum}...`);
 
-    try {
-      await indexPage.goto(filterUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-      
-      // Wait for listing container or anchor elements to render
-      await indexPage.waitForSelector('a[href*="listing"], a[href*="vdp"]', { timeout: 15000 }).catch(() => {
-        console.log("Timeout waiting for explicit anchors, proceeding to DOM scan...");
-      });
+      const indexPage = await browser.newPage();
+      await indexPage.setViewport({ width: 1920, height: 1080 });
+      await indexPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
 
-      // Auto-scroll to trigger lazy loading of car tiles
-      await indexPage.evaluate(async () => {
-        await new Promise((resolve) => {
-          let totalHeight = 0;
-          const distance = 300;
-          const timer = setInterval(() => {
-            const scrollHeight = document.body.scrollHeight;
-            window.scrollBy(0, distance);
-            totalHeight += distance;
-
-            if (totalHeight >= scrollHeight || totalHeight >= 4000) {
-              clearInterval(timer);
-              resolve();
-            }
-          }, 150);
+      try {
+        await indexPage.goto(targetFilterUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        
+        await indexPage.waitForSelector('a[href*="listing"], a[href*="vdp"]', { timeout: 15000 }).catch(() => {
+          console.log(`Page ${pageNum}: Timeout waiting for explicit anchors, proceeding to DOM scan...`);
         });
-      });
 
-      // Extract all VDP / Listing links from DOM
-      const pageLinks = await indexPage.evaluate(() => {
-        const anchors = Array.from(document.querySelectorAll('a[href]'));
-        return anchors
-          .map(a => a.href)
-          .filter(href => (href.includes('/vdp.action') || href.includes('/listing/') || href.includes('/detail')) && !href.includes('/search'));
-      });
+        // Scroll to trigger lazy loading of car tiles
+        await indexPage.evaluate(async () => {
+          await new Promise((resolve) => {
+            let totalHeight = 0;
+            const distance = 300;
+            const timer = setInterval(() => {
+              const scrollHeight = document.body.scrollHeight;
+              window.scrollBy(0, distance);
+              totalHeight += distance;
 
-      console.log(`Extracted ${pageLinks.length} raw vehicle links from filter [${i + 1}].`);
-      pageLinks.forEach(link => extractedVehicleUrls.add(link));
+              if (totalHeight >= scrollHeight || totalHeight >= 4000) {
+                clearInterval(timer);
+                resolve();
+              }
+            }, 150);
+          });
+        });
 
-    } catch (err) {
-      console.error(`Error scanning search index [${i + 1}]:`, err.message);
+        // Extract VDP / Listing links
+        const pageLinks = await indexPage.evaluate(() => {
+          const anchors = Array.from(document.querySelectorAll('a[href]'));
+          return anchors
+            .map(a => a.href)
+            .filter(href => (href.includes('/vdp.action') || href.includes('/listing/') || href.includes('/detail')) && !href.includes('/search'));
+        });
+
+        console.log(`Page ${pageNum}: Found ${pageLinks.length} candidate vehicle links.`);
+        
+        // Break early if an empty page is returned (end of search results)
+        if (pageLinks.length === 0) {
+          console.log(`Page ${pageNum} yielded zero links. Reached end of pagination for Filter [${i + 1}]. Moving to next filter.`);
+          await indexPage.close();
+          break;
+        }
+
+        pageLinks.forEach(link => extractedVehicleUrls.add(link));
+
+      } catch (err) {
+        console.error(`Error scanning filter [${i + 1}] Page ${pageNum}:`, err.message);
+      }
+      await indexPage.close();
     }
-    await indexPage.close();
   }
 
   const vehicleList = Array.from(extractedVehicleUrls);
-  console.log(`\nTotal Unique Candidate Vehicles Found Across All Filters: ${vehicleList.length}\n`);
+  console.log(`\n======================================================`);
+  console.log(`Total Unique Candidate Vehicles Extracted Across All Pages: ${vehicleList.length}`);
+  console.log(`======================================================\n`);
 
   if (vehicleList.length === 0) {
     console.error("No vehicle tile links were extracted. Halting execution.");
@@ -189,7 +208,7 @@ function getCoordinates(locationString) {
       listingStatus = "Sold";
     }
 
-    // Dynamic VIN Extraction (strictly enforcing 17-char maximum)
+    // Dynamic VIN Extraction
     let extractedVin = null;
     const vinMatch = pageText.match(/\b([A-HJ-NPR-Z0-9]{17})\b/i);
 
@@ -255,11 +274,9 @@ function getCoordinates(locationString) {
 
     const existingRecord = existingMap.get(extractedVin);
     if (existingRecord) {
-      // 1. Lock in manual owner overrides from Salesforce
       if (existingRecord.Previous_Owners__c != null) {
         finalOwners = existingRecord.Previous_Owners__c;
       }
-      // 2. Intelligent price management: Keep lower negotiated price OR take dynamic price drops
       if (existingRecord.Car_Price__c != null && price > 0) {
         finalPrice = Math.min(existingRecord.Car_Price__c, price);
       }
@@ -275,7 +292,7 @@ function getCoordinates(locationString) {
       "Location__c": resolvedLocation,
       "Logistics__c": distanceMiles,
       "VIN__c": extractedVin,
-      // "Listing_URL__c": targetUrl // Uncomment after creating Listing_URL__c field in Salesforce
+      // "Listing_URL__c": targetUrl
     };
 
     console.log(`Upserting: ${recordPayload.Name} | VIN: ${extractedVin} | Owners: ${finalOwners} | Price: $${finalPrice}`);
@@ -293,5 +310,5 @@ function getCoordinates(locationString) {
   }
 
   await browser.close();
-  console.log("Full batch extraction complete!");
+  console.log("Full multi-page batch extraction complete!");
 })();
