@@ -1,11 +1,8 @@
 // grabCar.js - Fully Patched Precision Extractor & Salesforce Sync
 
-const puppeteer = require('puppeteer');
-const geolib = require('geolib');
-const jsforce = require('jsforce');
-const https = require('https');
-const fs = require('fs');
-const path = require('path');
+import puppeteer from 'puppeteer';
+import jsforce from 'jsforce';
+import fs from 'fs';
 
 // --- YOUR SALESFORCE CREDENTIALS ---
 const SF_USERNAME = process.env.SF_USERNAME || 'kai.weaver988.dae61fa699f9@agentforce.com';
