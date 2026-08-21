@@ -25,7 +25,7 @@ const SF_LOGIN_URL = process.env.SF_LOGIN_URL || 'https://login.salesforce.com';
 const POST_FALLS_COORDS = { latitude: 47.7121, longitude: -116.9482 };
 
 // --- PAGINATION DEPTH CONFIGURATION ---
-const MAX_PAGES_PER_FILTER = 2; // Locked to 2 pages for optimal speed across dynamic sort vectors
+const MAX_PAGES_PER_FILTER = 3; // Updated to scan top 3 pages per sort vector
 
 // Dynamic Geocoding via OpenStreetMap
 function getCoordinates(locationString) {
