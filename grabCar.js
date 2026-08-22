@@ -83,7 +83,7 @@ function getCoordinates(locationString) {
   try {
     const existingRecords = await conn.sobject("Car_Candidate__c").find(
       {}, 
-      ["Id", "VIN__c", "Previous_Owners__c", "Car_Price__c", "Listing_URL__c", "Logistics__c"]
+      ["Id", "VIN__c", "Previous_Owners__c", "Car_Price__c", "Listing_URL__c"]
     );
     existingRecords.forEach(rec => {
       if (rec.VIN__c) existingMap.set(rec.VIN__c, rec);
@@ -269,7 +269,6 @@ function getCoordinates(locationString) {
     // --- SELECTIVE FIELD PROTECTION LOGIC ---
     let finalOwners = owners;
     let finalPrice = price;
-    let finalLogistics = distanceMiles;
 
     const existingRecord = existingMap.get(extractedVin);
     if (existingRecord) {
@@ -278,9 +277,6 @@ function getCoordinates(locationString) {
       }
       if (existingRecord.Car_Price__c != null && price > 0) {
         finalPrice = Math.min(existingRecord.Car_Price__c, price);
-      }
-      if (existingRecord.Logistics__c != null) {
-        finalLogistics = existingRecord.Logistics__c;
       }
     }
 
@@ -295,7 +291,7 @@ function getCoordinates(locationString) {
       "Make_and_Model__c": makeModel,
       "Year__c": extractedYear,
       "Location__c": resolvedLocation,
-      "Logistics__c": finalLogistics,
+      "Logistics__c": distanceMiles,
       "VIN__c": extractedVin,
       "Listing_URL__c": cleanUrl, // Clean URL string safely under 255 chars
     };
