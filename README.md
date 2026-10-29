@@ -1,4 +1,4 @@
-# Automated Multi-Source Vehicle Intelligence & Scoring Pipeline
+# Automated Car Scraper & Scoring Algorithm Pieline
 
 An end-to-end automated ETL pipeline and scoring engine that ingests, evaluates, and ranks pre-owned vehicle listings from CarGurus using headless browser automation, scheduled CI/CD workflows, and a custom Salesforce object architecture.
 
