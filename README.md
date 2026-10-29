@@ -4,7 +4,7 @@ An end-to-end automated ETL pipeline and scoring engine that ingests, evaluates,
 
 ---
 
-## 🚀 Hero Architecture & Leaderboard Preview
+## 🚀 Leaderboard Preview
 
 > *Live Salesforce List View: Automated Car Leaderboard running multi-variable scoring algorithms across regional inventory.*
 
@@ -30,8 +30,8 @@ An end-to-end automated ETL pipeline and scoring engine that ingests, evaluates,
 2. **Data Ingestion & Staging:**
    * Parsed JSON payloads are mapped and pushed directly into the Salesforce custom object schema (`Car_Candidate__c`).
 3. **Algorithmic Evaluation (`Total_Score__c`):**
-   * Instead of manual filtering, incoming records pass through a multi-variable custom formula scoring engine (0–100 scale).
-   * Evaluates variables including Total Cost of Acquisition (Purchase Price + Shipping/Logistics friction), mileage decay, model year, and previous owner penalties.
+   * Instead of manual filtering, incoming records pass through a multi-variable custom formula score.
+   * Evaluates variables including Total Cost of Acquisition (Purchase Price + Shipping/Logistics), mileage decay, model year, and previous owner penalties.
 4. **Actionable Leaderboard:**
    * Records are dynamically sorted into a segmented Salesforce List View (**Car Leaderboard**), surfacing high-probability matches (scoring 75+ points) with calculated target discounts and direct inventory links.
 
